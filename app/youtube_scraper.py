@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 class YouTubeDataScraper:
     def __init__(self, save_dir=THUMBNAILS_DIR):
         self.save_dir = save_dir
+        self.cookies_file = './cookies.txt'  # Path to cookies file
         self.create_directories()
 
     def create_directories(self):
@@ -37,6 +38,7 @@ class YouTubeDataScraper:
                 'no_warnings': True,
                 'extract_flat': False,
                 'skip_download': True,
+                'cookiefile': self.cookies_file,  # Added cookies
             }
             with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=False)
@@ -76,7 +78,6 @@ class YouTubeDataScraper:
         """Fetch video URLs from a channel's uploads playlist."""
         try:
             if '/@' in channel_url:
-                # Convert channel URL to uploads playlist URL
                 channel_username = channel_url.split('/')[-1]
                 playlist_url = f"https://www.youtube.com/{channel_username}/videos"
             else:
@@ -87,6 +88,7 @@ class YouTubeDataScraper:
                 'no_warnings': True,
                 'extract_flat': True,
                 'playlistend': number_of_videos,
+                'cookiefile': self.cookies_file,  # Added cookies
             }
     
             with YoutubeDL(ydl_opts) as ydl:
@@ -125,35 +127,30 @@ class YouTubeDataScraper:
 
 def get_playlist_video_urls(playlist_id):
     """Get all video URLs from a YouTube playlist"""
-    # If full URL is provided, extract playlist ID
     if 'youtube.com' in playlist_id:
         if 'playlist?list=' in playlist_id:
-            playlist_id = playlist_id.split('playlist?list=')[1].split('&')[0]  # Handle additional parameters
+            playlist_id = playlist_id.split('playlist?list=')[1].split('&')[0]
         else:
             logger.info("Invalid playlist URL")
             return []
 
-    # Create YouTube playlist URL
     playlist_url = f'https://www.youtube.com/playlist?list={playlist_id}'
     
-    # Configure yt-dlp options with additional parameters
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
         'extract_flat': True,
         'force_generic_extractor': False,
-        'ignoreerrors': True,  # Skip unavailable videos
+        'ignoreerrors': True,
         'no_color': True,
         'geo_bypass': True,
-        'cookiefile': None,  # Add cookie file if needed
-        'format': 'best',  # Specify format to avoid format selection issues
+        'cookiefile': 'cookies.txt',  # Added cookies
+        'format': 'best',
     }
 
     try:
-        # Create YouTube downloader object
         with YoutubeDL(ydl_opts) as ydl:
             try:
-                # Extract playlist information
                 playlist_info = ydl.extract_info(playlist_url, download=False)
                 
                 if not playlist_info:
@@ -164,10 +161,9 @@ def get_playlist_video_urls(playlist_id):
                     logger.error("No entries found in playlist")
                     return []
 
-                # Extract video URLs
                 video_urls = []
                 for entry in playlist_info['entries']:
-                    if entry and entry.get('id'):  # Check if entry exists and has an ID
+                    if entry and entry.get('id'):
                         video_url = f"https://www.youtube.com/watch?v={entry['id']}"
                         video_urls.append(video_url)
                 
@@ -192,17 +188,6 @@ class YouTubeVideoFetcher:
         self.scraper = YouTubeDataScraper(save_dir=save_dir)
 
     def fetch_videos(self, source_type, url, no_of_videos=100):
-        """
-        Fetches video data from a playlist, single video, or channel.
-
-        Parameters:
-        - source_type (str): "playlist", "video", or "channel"
-        - url (str): The URL or ID of the source
-        - no_of_videos (int): Number of videos to fetch (for channel only)
-
-        Returns:
-        - pandas.DataFrame: Data collected from the videos
-        """
         video_urls = []
 
         if source_type == "playlist":
