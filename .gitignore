@@ -1,0 +1,11 @@
+venv
+api/__pycache__
+data
+thumbnails
+database
+*.pyc
+*.log
+*.sqlite3
+.env
+data/thumbnails
+app/__pycache__
