@@ -16,7 +16,7 @@ def render_admin_panel():
     st.sidebar.write(f"Logged in as: {st.session_state['username']} (Admin)")
     logout_user()
     
-    tabs = st.tabs(["Dashboard", "Add Videos", "View Data", "Export Data"])
+    tabs = st.tabs(["Dashboard", "Add Videos", "Upload CSV", "View Data", "Export Data"])
     
     with tabs[0]:
         render_admin_dashboard()
@@ -25,9 +25,12 @@ def render_admin_panel():
         render_add_videos()
     
     with tabs[2]:
-        render_view_data()
+        render_csv_upload()
     
     with tabs[3]:
+        render_view_data()
+    
+    with tabs[4]:
         render_export_data()
 
 def render_admin_dashboard():
@@ -104,6 +107,111 @@ def render_add_videos():
                     st.error(f"Error processing {source_type}: {str(e)}")
         else:
             st.warning("Please enter a URL")
+
+def render_csv_upload():
+    """Render CSV upload interface"""
+    st.header("Upload Video Data CSV")
+    
+    # Instructions
+    st.write("""
+    Upload a CSV file containing video data with the following columns:
+    ```
+    Required columns:
+    - video_id        : YouTube video ID
+    - title          : Video title
+    - description    : Video description
+    - view_count     : Number of views
+    - like_count     : Number of likes
+    - thumbnail_url  : URL of video thumbnail
+    - duration       : Video duration in seconds
+    - upload_date    : Video upload date
+    - channel_id     : YouTube channel ID
+    - channel_name   : Channel name
+    - video_url      : Full video URL
+    ```
+    """)
+    
+    uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+    
+    if uploaded_file is not None:
+        try:
+            df = pd.read_csv(uploaded_file)
+            expected_columns = [
+                'video_id', 'title', 'description', 'view_count', 
+                'like_count', 'thumbnail_url', 'duration', 'upload_date',
+                'channel_id', 'channel_name', 'video_url'
+            ]
+            
+            # Check for missing columns
+            missing_columns = [col for col in expected_columns if col not in df.columns]
+            if missing_columns:
+                st.error(f"Missing required columns: {', '.join(missing_columns)}")
+                return
+            
+            # Preview the data
+            st.write("Preview of uploaded data:")
+            st.dataframe(df.head())
+            
+            # Additional statistics
+            st.write("Dataset Statistics:")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"Total videos: {len(df)}")
+                st.write(f"Unique channels: {df['channel_name'].nunique()}")
+            with col2:
+                st.write(f"Date range: {df['upload_date'].min()} to {df['upload_date'].max()}")
+            
+            if st.button("Process CSV Data"):
+                with st.spinner("Processing videos from CSV..."):
+                    success_count = 0
+                    error_count = 0
+                    progress_bar = st.progress(0)
+                    
+                    for idx, row in df.iterrows():
+                        try:
+                            video_data = {
+                                'video_id': str(row['video_id']),
+                                'title': str(row['title']),
+                                'description': str(row['description']),
+                                'view_count': int(row['view_count']),
+                                'like_count': int(row['like_count']),
+                                'thumbnail_url': str(row['thumbnail_url']),
+                                'duration': int(row['duration']),
+                                'upload_date': str(row['upload_date']),
+                                'channel_id': str(row['channel_id']),
+                                'channel_name': str(row['channel_name']),
+                                'video_url': str(row['video_url']),
+                                'local_thumbnail_path': None
+                            }
+                            
+                            # Download thumbnail
+                            from app.youtube_scraper import YouTubeDataScraper
+                            scraper = YouTubeDataScraper()
+                            video_data['local_thumbnail_path'] = scraper.download_thumbnail(
+                                video_data['thumbnail_url'],
+                                video_data['video_id']
+                            )
+                            
+                            # Add to database
+                            from app.database import add_video, mark_video_processed
+                            if add_video(video_data):
+                                mark_video_processed(video_data['video_id'])
+                                success_count += 1
+                        except Exception as e:
+                            error_count += 1
+                            st.error(f"Error processing video {row['video_id']}: {str(e)}")
+                        
+                        # Update progress
+                        progress_bar.progress((idx + 1) / len(df))
+                    
+                    st.success(f"""
+                    Processing complete!
+                    - Successfully processed: {success_count} videos
+                    - Errors: {error_count} videos
+                    """)
+                    
+        except Exception as e:
+            st.error(f"Error reading CSV file: {str(e)}")
 
 def render_view_data():
     """View collected and labeled data"""

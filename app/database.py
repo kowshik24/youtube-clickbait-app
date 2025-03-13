@@ -68,11 +68,19 @@ def init_db():
             video_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             is_clickbait BOOLEAN NOT NULL,
+            confidence_level INTEGER NOT NULL CHECK(confidence_level BETWEEN 1 AND 4),
             labeled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (video_id) REFERENCES videos (id),
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
         ''')
+        
+        # Add confidence_level column if it doesn't exist
+        try:
+            cursor.execute('ALTER TABLE labels ADD COLUMN confidence_level INTEGER NOT NULL DEFAULT 3 CHECK(confidence_level BETWEEN 1 AND 4)')
+        except sqlite3.OperationalError:
+            # Column already exists
+            pass
         
         # Daily stats table
         cursor.execute('''
@@ -199,29 +207,78 @@ def reset_password(user_id, new_password):
 # Video management functions
 def add_video(video_data):
     """Add a video to the database"""
+    required_fields = [
+        'video_id', 'title', 'description', 'view_count', 
+        'like_count', 'thumbnail_url', 'duration', 'upload_date',
+        'channel_id', 'channel_name', 'video_url'
+    ]
+    
+    # Validate required fields
+    for field in required_fields:
+        if field not in video_data:
+            raise ValueError(f"Missing required field: {field}")
+            
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
-            cursor.execute('''
-            INSERT OR IGNORE INTO videos 
-            (video_id, title, description, view_count, like_count, 
-             thumbnail_url, local_thumbnail_path, duration, upload_date,
-             channel_id, channel_name, video_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                video_data['video_id'], 
-                video_data['title'],
-                video_data['description'],
-                video_data['view_count'],
-                video_data['like_count'],
-                video_data['thumbnail_url'],
-                video_data['local_thumbnail_path'],
-                video_data['duration'],
-                video_data['upload_date'],
-                video_data['channel_id'],
-                video_data['channel_name'],
-                video_data['video_url']
-            ))
+            # Check if video already exists
+            existing = cursor.execute(
+                "SELECT id FROM videos WHERE video_id = ?", 
+                (video_data['video_id'],)
+            ).fetchone()
+            
+            if existing:
+                # Update existing record
+                cursor.execute('''
+                UPDATE videos SET 
+                    title = ?,
+                    description = ?,
+                    view_count = ?,
+                    like_count = ?,
+                    thumbnail_url = ?,
+                    local_thumbnail_path = ?,
+                    duration = ?,
+                    upload_date = ?,
+                    channel_id = ?,
+                    channel_name = ?,
+                    video_url = ?
+                WHERE video_id = ?
+                ''', (
+                    video_data['title'],
+                    video_data['description'],
+                    video_data['view_count'],
+                    video_data['like_count'],
+                    video_data['thumbnail_url'],
+                    video_data['local_thumbnail_path'],
+                    video_data['duration'],
+                    video_data['upload_date'],
+                    video_data['channel_id'],
+                    video_data['channel_name'],
+                    video_data['video_url'],
+                    video_data['video_id']
+                ))
+            else:
+                # Insert new record
+                cursor.execute('''
+                INSERT INTO videos 
+                (video_id, title, description, view_count, like_count, 
+                 thumbnail_url, local_thumbnail_path, duration, upload_date,
+                 channel_id, channel_name, video_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    video_data['video_id'],
+                    video_data['title'],
+                    video_data['description'],
+                    video_data['view_count'],
+                    video_data['like_count'],
+                    video_data['thumbnail_url'],
+                    video_data['local_thumbnail_path'],
+                    video_data['duration'],
+                    video_data['upload_date'],
+                    video_data['channel_id'],
+                    video_data['channel_name'],
+                    video_data['video_url']
+                ))
             conn.commit()
             return True
         except Exception as e:
@@ -265,18 +322,18 @@ def get_unlabeled_video_for_user(user_id):
         
         return None
 
-def save_label(video_id, user_id, is_clickbait):
+def save_label(video_id, user_id, is_clickbait, confidence_level):
     """Save a user's label for a video and update daily stats"""
     current_date = datetime.date.today().isoformat()
     
     with get_db_connection() as conn:
         cursor = conn.cursor()
         
-        # Save the label
+        # Save the label with confidence level
         cursor.execute('''
-            INSERT INTO labels (video_id, user_id, is_clickbait) 
-            VALUES (?, ?, ?)
-        ''', (video_id, user_id, is_clickbait))
+            INSERT INTO labels (video_id, user_id, is_clickbait, confidence_level) 
+            VALUES (?, ?, ?, ?)
+        ''', (video_id, user_id, is_clickbait, confidence_level))
         
         # Update daily stats
         cursor.execute('''
@@ -335,7 +392,7 @@ def get_all_labeled_data():
             v.video_id, v.title, v.description, v.view_count, 
             v.like_count, v.thumbnail_url, v.duration, v.upload_date,
             v.channel_id, v.channel_name, v.video_url,
-            l.is_clickbait, u.username as labeled_by, l.labeled_at
+            l.is_clickbait, l.confidence_level, u.username as labeled_by, l.labeled_at
         FROM 
             labels l
         JOIN 
