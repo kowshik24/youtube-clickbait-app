@@ -5,33 +5,40 @@ import datetime
 import matplotlib.pyplot as plt
 import json
 
-from app.database import get_admin_dashboard_stats, get_all_labeled_data
+from app.database import get_admin_dashboard_stats, get_all_labeled_data, save_instructions, get_instructions
 from app.youtube_scraper import YouTubeVideoFetcher
 from app.auth import logout_user
 
 def render_admin_panel():
     """Render the admin panel"""
-    st.title("YouTube Clickbait Admin Panel")
+    st.sidebar.title("Admin Panel")
     
-    st.sidebar.write(f"Logged in as: {st.session_state['username']} (Admin)")
-    logout_user()
+    menu_options = [
+        "Dashboard",
+        "Add Videos",
+        "Upload CSV",
+        "View Data",
+        "Export Data",
+        "Labeling Instructions",  # New menu option
+        "Logout"
+    ]
     
-    tabs = st.tabs(["Dashboard", "Add Videos", "Upload CSV", "View Data", "Export Data"])
+    choice = st.sidebar.selectbox("Menu", menu_options)
     
-    with tabs[0]:
+    if choice == "Dashboard":
         render_admin_dashboard()
-    
-    with tabs[1]:
+    elif choice == "Add Videos":
         render_add_videos()
-    
-    with tabs[2]:
+    elif choice == "Upload CSV":
         render_csv_upload()
-    
-    with tabs[3]:
+    elif choice == "View Data":
         render_view_data()
-    
-    with tabs[4]:
+    elif choice == "Export Data":
         render_export_data()
+    elif choice == "Labeling Instructions":
+        render_labeling_instructions()
+    elif choice == "Logout":
+        logout_user()
 
 def render_admin_dashboard():
     """Render admin dashboard with statistics"""
@@ -245,3 +252,28 @@ def render_export_data():
         )
     else:
         st.info("No data available for export.")
+
+def render_labeling_instructions():
+    """Render interface for managing labeling instructions"""
+    st.header("Manage Labeling Instructions")
+    
+    # Get current instructions
+    current_instructions = get_instructions()
+    
+    # Create text area for editing instructions
+    new_instructions = st.text_area(
+        "Edit Labeling Instructions",
+        value=current_instructions,
+        height=300,
+        help="Enter instructions for video labeling. These will be shown to users in the labeling interface."
+    )
+    
+    # Save button
+    if st.button("Save Instructions"):
+        save_instructions(new_instructions)
+        st.success("Instructions updated successfully!")
+        
+    # Preview section
+    st.subheader("Preview")
+    st.info("This is how the instructions will appear to users:")
+    st.markdown(new_instructions)

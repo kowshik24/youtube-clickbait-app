@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import os
 
-from app.database import get_unlabeled_video_for_user, save_label, get_user_stats, get_db_connection
+from app.database import get_unlabeled_video_for_user, save_label, get_user_stats, get_db_connection, get_instructions
 from app.auth import logout_user
 
 def render_user_panel():
@@ -25,6 +25,11 @@ def render_user_panel():
 def render_labeling_interface():
     """Render interface for labeling videos"""
     st.header("Label Videos")
+    
+    # Show labeling instructions
+    with st.expander("Labeling Instructions", expanded=True):
+        instructions = get_instructions()
+        st.markdown(instructions)
     
     user_id = st.session_state['user_id']
     

@@ -464,3 +464,18 @@ def mark_video_processed(video_id):
         )
         conn.commit()
         return True
+
+# Global variable to store labeling instructions
+_labeling_instructions = """Default labeling instructions:
+1. Watch the video title and thumbnail carefully
+2. Determine if it's clickbait based on misleading content
+3. Rate your confidence level from 1-4"""
+
+def save_instructions(instructions):
+    """Save labeling instructions to memory"""
+    global _labeling_instructions
+    _labeling_instructions = instructions
+
+def get_instructions():
+    """Get current labeling instructions from memory"""
+    return _labeling_instructions
