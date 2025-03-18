@@ -94,6 +94,19 @@ def init_db():
         )
         ''')
         
+        # Add skipped_videos table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS skipped_videos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            skipped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (video_id) REFERENCES videos (id),
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            UNIQUE(video_id, user_id)
+        )
+        ''')
+        
         # Create default admin user if it doesn't exist
         cursor.execute('''
         INSERT OR IGNORE INTO users (username, email, password_hash, is_admin)
@@ -292,14 +305,17 @@ def get_unlabeled_video_for_user(user_id):
         # First check if the user already has an assigned video
         assigned_video = cursor.execute('''
             SELECT * FROM videos 
-            WHERE assigned_to = ? AND id NOT IN (SELECT video_id FROM labels WHERE user_id = ?)
+            WHERE assigned_to = ? 
+            AND id NOT IN (SELECT video_id FROM labels WHERE user_id = ?)
+            AND id NOT IN (SELECT video_id FROM skipped_videos WHERE user_id = ?)
             LIMIT 1
-        ''', (user_id, user_id)).fetchone()
+        ''', (user_id, user_id, user_id)).fetchone()
         
         if assigned_video:
             return dict(assigned_video)
         
-        # Get a video that hasn't been labeled by this user and isn't assigned to anyone
+        # Get a video that hasn't been labeled by this user, hasn't been skipped,
+        # and isn't assigned to anyone
         current_time = datetime.datetime.now().isoformat()
         video = cursor.execute('''
             SELECT * FROM videos 
@@ -307,8 +323,9 @@ def get_unlabeled_video_for_user(user_id):
             AND (assigned_to IS NULL OR 
                 (julianday(?) - julianday(assigned_at)) * 24 * 60 > 15)
             AND id NOT IN (SELECT video_id FROM labels)
+            AND id NOT IN (SELECT video_id FROM skipped_videos WHERE user_id = ?)
             LIMIT 1
-        ''', (current_time,)).fetchone()
+        ''', (current_time, user_id)).fetchone()
         
         if video:
             # Assign the video to this user
@@ -352,6 +369,39 @@ def save_label(video_id, user_id, is_clickbait, confidence_level):
         
         conn.commit()
         return True
+
+def skip_video(video_id, user_id):
+    """Record a skipped video and clear its assignment"""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            # Get the internal video ID first
+            video = cursor.execute(
+                "SELECT id FROM videos WHERE video_id = ?", 
+                (video_id,)
+            ).fetchone()
+            
+            if not video:
+                return False
+                
+            # Record the skip
+            cursor.execute('''
+                INSERT INTO skipped_videos (video_id, user_id)
+                VALUES (?, ?)
+            ''', (video['id'], user_id))
+            
+            # Clear the assignment
+            cursor.execute('''
+                UPDATE videos 
+                SET assigned_to = NULL, assigned_at = NULL 
+                WHERE video_id = ?
+            ''', (video_id,))
+            
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            # Video was already skipped by this user
+            return False
 
 def get_user_stats(user_id):
     """Get user contribution statistics"""
